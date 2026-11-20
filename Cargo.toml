@@ -7,9 +7,8 @@ description = "The cadrs adapter for the B-rep protocol the conformance suite dr
 publish = false
 
 [dependencies]
-# The protocol at the suite's commit 12ffc75: `supports` and the constructors of `Mesh` and
-# `Display` are newer than the crates.io release.
-brep-protocol = { git = "https://github.com/springcraft-ai/brep-conformance", rev = "12ffc75d305451004e12a24862dc092f6df0529b" }
+# The protocol from a local checkout of the suite, for changes not yet on its main branch.
+brep-protocol = { path = "../brep-conformance-add-cadrs/protocol" }
 # cadrs_kernel is not on crates.io. Keep `VERSION` in src/cadrs.rs equal to this rev.
 cadrs_kernel = { git = "https://github.com/rvdende/cadrs", rev = "bb09c367" }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }

@@ -1,7 +1,6 @@
 //! brep-conformance's `Kernel` over cadrs's: the `cadrs-adapter` binary serves it as the
 //! protocol on stdin and stdout.
 
-use std::cell::RefCell;
 use std::f64::consts::TAU;
 
 use brep_protocol::{Kernel, Refusal, model, model::Primitive, profile};
@@ -32,17 +31,17 @@ pub enum Solid {
 }
 
 /// The kernel's session: it owns the bodies, and its operations never change their inputs.
-pub struct Cadrs;
+pub struct Cadrs(DefaultKernel);
 
-thread_local! {
-    /// Each thread's own session: the in-process runner gives every worker thread its cases and
-    /// resets the thread's session after each, and `serve` runs on one thread.
-    static SESSION: RefCell<DefaultKernel> = RefCell::new(DefaultKernel::new());
+impl Default for Cadrs {
+    fn default() -> Self {
+        Cadrs(DefaultKernel::new())
+    }
 }
 
 impl Cadrs {
-    /// Runs `f` on this thread's session (the examples reach the bodies behind a handle).
-    pub fn with<T>(&self, f: impl FnOnce(&mut DefaultKernel) -> T) -> T {
+    /// Runs `f` on the session.
+    pub fn with<T>(&mut self, f: impl FnOnce(&mut DefaultKernel) -> T) -> T {
         // The runner silences panics while it runs; `CADRS_PANICS=1` prints each with its
         // backtrace, the hook set at the first call so that it replaces the runner's.
         static TRACE: std::sync::Once = std::sync::Once::new();
@@ -54,7 +53,7 @@ impl Cadrs {
                 }));
             }
         });
-        SESSION.with(|k| f(&mut k.borrow_mut()))
+        f(&mut self.0)
     }
 }
 
@@ -276,7 +275,71 @@ fn rows(m: [[f64; 4]; 3]) -> (Matrix3<f64>, Vector3<f64>) {
     )
 }
 
-const UNSUPPORTED: [(&str, &str); 0] = [];
+/// The functions the adapter answers, each with one call of cadrs: all of the protocol's.
+const SUPPORTS: [&str; 62] = [
+    "box",
+    "cylinder",
+    "sphere",
+    "torus",
+    "cone",
+    "extrude",
+    "revolve",
+    "screw",
+    "loft",
+    "loft_through",
+    "sweep",
+    "sweep_path",
+    "slab",
+    "union",
+    "intersection",
+    "difference",
+    "union_all",
+    "difference_all",
+    "fillet",
+    "fillet_radii",
+    "fillet_variable",
+    "fillet_conic",
+    "fillet_g2",
+    "fillet_setback",
+    "fillet_setback_g2",
+    "fillet_faces",
+    "full_round",
+    "chamfer",
+    "chamfer_two",
+    "chamfer_distances",
+    "offset",
+    "offset_faces",
+    "delete_faces",
+    "move_faces",
+    "thicken",
+    "shell",
+    "draft",
+    "write_step",
+    "sew",
+    "read_step",
+    "volume",
+    "area",
+    "classify",
+    "closest",
+    "normal",
+    "curvature",
+    "check",
+    "centroid",
+    "inertia",
+    "distance",
+    "interference",
+    "betti",
+    "section_area",
+    "section",
+    "project",
+    "bounding_box",
+    "split",
+    "mesh",
+    "display",
+    "raycast",
+    "transform",
+    "affine",
+];
 
 impl Kernel for Cadrs {
     type Solid = Solid;
@@ -297,19 +360,15 @@ impl Kernel for Cadrs {
         "chamfers do not run on past their faces (ChamferOpts::overflow false); meshes bound the sag alone (Tessellation::angle π)".into()
     }
 
-    fn reset(&self) {
-        SESSION.with(|k| *k.borrow_mut() = DefaultKernel::new());
+    fn reset(&mut self) {
+        self.0 = DefaultKernel::new();
     }
 
     fn supports(&self) -> Vec<String> {
-        brep_protocol::FUNCTIONS
-            .iter()
-            .filter(|f| !UNSUPPORTED.iter().any(|(n, _)| n == *f))
-            .map(|f| f.to_string())
-            .collect()
+        SUPPORTS.map(String::from).to_vec()
     }
 
-    fn make(&self, p: &Primitive) -> Result<Solid, Refusal> {
+    fn make(&mut self, p: &Primitive) -> Result<Solid, Refusal> {
         use cadrs_kernel::Primitive as K;
         let f = p.frame();
         let (o, z) = (p3(f.origin), unit(f.z)?);
@@ -522,7 +581,7 @@ impl Kernel for Cadrs {
     }
 
     fn loft_through(
-        &self,
+        &mut self,
         frame: &model::Frame,
         profiles: &[profile::Profile],
         heights: &[f64],
@@ -553,7 +612,7 @@ impl Kernel for Cadrs {
         self.with(|k| solid(k.loft_with(&spec)))
     }
 
-    fn union(&self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
+    fn union(&mut self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
         match (*a, *b) {
             (Solid::Empty, other) | (other, Solid::Empty) => Ok(other),
             (Solid::Body(a), Solid::Body(b)) => {
@@ -562,7 +621,7 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn intersection(&self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
+    fn intersection(&mut self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
         match (*a, *b) {
             (Solid::Body(a), Solid::Body(b)) => {
                 self.with(|k| solid(k.boolean(BoolOp::Intersect, a, &[b])))
@@ -571,7 +630,7 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn difference(&self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
+    fn difference(&mut self, a: &Solid, b: &Solid) -> Result<Solid, Refusal> {
         match (*a, *b) {
             (Solid::Empty, _) => Ok(Solid::Empty),
             (a, Solid::Empty) => Ok(a),
@@ -581,7 +640,7 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn union_all(&self, solids: &[&Solid]) -> Result<Solid, Refusal> {
+    fn union_all(&mut self, solids: &[&Solid]) -> Result<Solid, Refusal> {
         let bodies: Vec<BodyId> = solids.iter().filter_map(|s| body(s).ok()).collect();
         match bodies[..] {
             [] => Ok(Solid::Empty),
@@ -590,7 +649,7 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn difference_all(&self, target: &Solid, tools: &[&Solid]) -> Result<Solid, Refusal> {
+    fn difference_all(&mut self, target: &Solid, tools: &[&Solid]) -> Result<Solid, Refusal> {
         let Solid::Body(target) = *target else {
             return Ok(Solid::Empty);
         };
@@ -601,7 +660,7 @@ impl Kernel for Cadrs {
         self.with(|k| solid(k.boolean(BoolOp::Subtract, target, &tools)))
     }
 
-    fn volume(&self, s: &Solid) -> Result<f64, Refusal> {
+    fn volume(&mut self, s: &Solid) -> Result<f64, Refusal> {
         match *s {
             Solid::Empty => Ok(0.0),
             Solid::Body(b) => {
@@ -610,7 +669,7 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn area(&self, s: &Solid) -> Result<f64, Refusal> {
+    fn area(&mut self, s: &Solid) -> Result<f64, Refusal> {
         match *s {
             Solid::Empty => Ok(0.0),
             Solid::Body(b) => self.with(|k| {
@@ -621,14 +680,14 @@ impl Kernel for Cadrs {
         }
     }
 
-    fn check(&self, s: &Solid) -> Result<Vec<String>, Refusal> {
+    fn check(&mut self, s: &Solid) -> Result<Vec<String>, Refusal> {
         match *s {
             Solid::Empty => Ok(Vec::new()),
             Solid::Body(b) => self.with(|k| Ok(k.get(b).map_err(refusal)?.check())),
         }
     }
 
-    fn classify(&self, s: &Solid, points: &[model::Vec3]) -> Result<Vec<model::Side>, Refusal> {
+    fn classify(&mut self, s: &Solid, points: &[model::Vec3]) -> Result<Vec<model::Side>, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(vec![model::Side::Out; points.len()]);
         };
@@ -646,7 +705,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn closest(&self, s: &Solid, points: &[model::Vec3]) -> Result<Vec<model::Vec3>, Refusal> {
+    fn closest(&mut self, s: &Solid, points: &[model::Vec3]) -> Result<Vec<model::Vec3>, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             points
@@ -661,7 +720,7 @@ impl Kernel for Cadrs {
     }
 
     fn normal(
-        &self,
+        &mut self,
         s: &Solid,
         points: &[model::Vec3],
     ) -> Result<Vec<Option<model::Vec3>>, Refusal> {
@@ -675,7 +734,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn fillet(&self, s: &Solid, edges: &[model::Vec3], radius: f64) -> Result<Solid, Refusal> {
+    fn fillet(&mut self, s: &Solid, edges: &[model::Vec3], radius: f64) -> Result<Solid, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let ids = edges_at(k, b, edges)?;
@@ -684,7 +743,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_conic(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         setback: f64,
@@ -704,7 +763,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_g2(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         offset: f64,
@@ -726,7 +785,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_setback(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         radius: f64,
@@ -740,7 +799,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_setback_g2(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         radius: f64,
@@ -758,7 +817,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_faces(
-        &self,
+        &mut self,
         s: &Solid,
         face_a: model::Vec3,
         face_b: model::Vec3,
@@ -772,7 +831,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_radii(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         radii: &[f64],
@@ -799,7 +858,7 @@ impl Kernel for Cadrs {
     }
 
     fn fillet_variable(
-        &self,
+        &mut self,
         s: &Solid,
         edge: model::Vec3,
         from: model::Vec3,
@@ -827,7 +886,7 @@ impl Kernel for Cadrs {
     }
 
     fn full_round(
-        &self,
+        &mut self,
         s: &Solid,
         side_a: model::Vec3,
         middle: model::Vec3,
@@ -844,7 +903,12 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn chamfer(&self, s: &Solid, edges: &[model::Vec3], distance: f64) -> Result<Solid, Refusal> {
+    fn chamfer(
+        &mut self,
+        s: &Solid,
+        edges: &[model::Vec3],
+        distance: f64,
+    ) -> Result<Solid, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let ids = edges_at(k, b, edges)?;
@@ -857,7 +921,7 @@ impl Kernel for Cadrs {
     }
 
     fn chamfer_distances(
-        &self,
+        &mut self,
         s: &Solid,
         edges: &[model::Vec3],
         distances: &[f64],
@@ -870,7 +934,7 @@ impl Kernel for Cadrs {
     }
 
     fn chamfer_two(
-        &self,
+        &mut self,
         s: &Solid,
         edge: model::Vec3,
         face: model::Vec3,
@@ -889,7 +953,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn offset(&self, s: &Solid, distance: f64) -> Result<Solid, Refusal> {
+    fn offset(&mut self, s: &Solid, distance: f64) -> Result<Solid, Refusal> {
         let b = body(s)?;
         let spec = OffsetSpec {
             distance,
@@ -900,7 +964,7 @@ impl Kernel for Cadrs {
     }
 
     fn offset_faces(
-        &self,
+        &mut self,
         s: &Solid,
         faces: &[model::Vec3],
         distance: f64,
@@ -919,7 +983,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn delete_faces(&self, s: &Solid, faces: &[model::Vec3]) -> Result<Solid, Refusal> {
+    fn delete_faces(&mut self, s: &Solid, faces: &[model::Vec3]) -> Result<Solid, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let ids = faces_at(k, b, faces)?;
@@ -928,7 +992,7 @@ impl Kernel for Cadrs {
     }
 
     fn move_faces(
-        &self,
+        &mut self,
         s: &Solid,
         faces: &[model::Vec3],
         matrix: [[f64; 4]; 3],
@@ -948,7 +1012,12 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn thicken(&self, s: &Solid, faces: &[model::Vec3], thickness: f64) -> Result<Solid, Refusal> {
+    fn thicken(
+        &mut self,
+        s: &Solid,
+        faces: &[model::Vec3],
+        thickness: f64,
+    ) -> Result<Solid, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let faces = faces_at(k, b, faces)?
@@ -972,7 +1041,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn shell(&self, s: &Solid, open: &[model::Vec3], thickness: f64) -> Result<Solid, Refusal> {
+    fn shell(&mut self, s: &Solid, open: &[model::Vec3], thickness: f64) -> Result<Solid, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let spec = ShellSpec {
@@ -988,7 +1057,7 @@ impl Kernel for Cadrs {
     }
 
     fn draft(
-        &self,
+        &mut self,
         s: &Solid,
         faces: &[model::Vec3],
         origin: model::Vec3,
@@ -1010,11 +1079,11 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn transform(&self, s: &Solid, matrix: [[f64; 4]; 3]) -> Result<Solid, Refusal> {
+    fn transform(&mut self, s: &Solid, matrix: [[f64; 4]; 3]) -> Result<Solid, Refusal> {
         self.affine(s, matrix)
     }
 
-    fn affine(&self, s: &Solid, matrix: [[f64; 4]; 3]) -> Result<Solid, Refusal> {
+    fn affine(&mut self, s: &Solid, matrix: [[f64; 4]; 3]) -> Result<Solid, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(Solid::Empty);
         };
@@ -1022,7 +1091,7 @@ impl Kernel for Cadrs {
         self.with(|k| solid(k.transform_affine(b, m, t)))
     }
 
-    fn raycast(&self, s: &Solid, o: model::Vec3, d: model::Vec3) -> Result<Vec<f64>, Refusal> {
+    fn raycast(&mut self, s: &Solid, o: model::Vec3, d: model::Vec3) -> Result<Vec<f64>, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(Vec::new());
         };
@@ -1033,7 +1102,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn write_step(&self, s: &Solid) -> Result<String, Refusal> {
+    fn write_step(&mut self, s: &Solid) -> Result<String, Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let bytes = k.export_step(&[b]).map_err(refusal)?;
@@ -1041,7 +1110,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn read_step(&self, text: &str) -> Result<Solid, Refusal> {
+    fn read_step(&mut self, text: &str) -> Result<Solid, Refusal> {
         self.with(|k| {
             let bodies = k.import_step(text.as_bytes()).map_err(refusal)?;
             match bodies[..] {
@@ -1053,11 +1122,11 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn sew(&self, text: &str, tolerance: f64) -> Result<Solid, Refusal> {
+    fn sew(&mut self, text: &str, tolerance: f64) -> Result<Solid, Refusal> {
         self.with(|k| solid(k.sew_step(text.as_bytes(), tolerance)))
     }
 
-    fn centroid(&self, s: &Solid) -> Result<Option<model::Vec3>, Refusal> {
+    fn centroid(&mut self, s: &Solid) -> Result<Option<model::Vec3>, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(None);
         };
@@ -1067,7 +1136,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn inertia(&self, s: &Solid) -> Result<[[f64; 3]; 3], Refusal> {
+    fn inertia(&mut self, s: &Solid) -> Result<[[f64; 3]; 3], Refusal> {
         let Solid::Body(b) = *s else {
             return Ok([[0.0; 3]; 3]);
         };
@@ -1077,7 +1146,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn distance(&self, a: &Solid, b: &Solid) -> Result<f64, Refusal> {
+    fn distance(&mut self, a: &Solid, b: &Solid) -> Result<f64, Refusal> {
         let (a, b) = (body(a)?, body(b)?);
         self.with(|k| {
             k.min_distance(&DistanceTarget::Solid(a), &DistanceTarget::Solid(b))
@@ -1087,7 +1156,7 @@ impl Kernel for Cadrs {
     }
 
     fn curvature(
-        &self,
+        &mut self,
         s: &Solid,
         points: &[model::Vec3],
     ) -> Result<Vec<Option<[f64; 2]>>, Refusal> {
@@ -1097,7 +1166,7 @@ impl Kernel for Cadrs {
     }
 
     fn section(
-        &self,
+        &mut self,
         s: &Solid,
         origin: model::Vec3,
         normal: model::Vec3,
@@ -1118,7 +1187,7 @@ impl Kernel for Cadrs {
     }
 
     fn section_area(
-        &self,
+        &mut self,
         s: &Solid,
         origin: model::Vec3,
         normal: model::Vec3,
@@ -1129,14 +1198,14 @@ impl Kernel for Cadrs {
         self.with(|k| k.section_area(b, p3(origin), v3(normal)).map_err(refusal))
     }
 
-    fn betti(&self, s: &Solid) -> Result<[u64; 3], Refusal> {
+    fn betti(&mut self, s: &Solid) -> Result<[u64; 3], Refusal> {
         let Solid::Body(b) = *s else {
             return Ok([0, 0, 0]);
         };
         self.with(|k| k.betti_numbers(b).map_err(refusal))
     }
 
-    fn interference(&self, a: &Solid, b: &Solid) -> Result<brep_protocol::Meeting, Refusal> {
+    fn interference(&mut self, a: &Solid, b: &Solid) -> Result<brep_protocol::Meeting, Refusal> {
         let (a, b) = (body(a)?, body(b)?);
         self.with(|k| {
             let m = k.interference(a, b).map_err(refusal)?;
@@ -1147,7 +1216,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn bounding_box(&self, s: &Solid) -> Result<[model::Vec3; 2], Refusal> {
+    fn bounding_box(&mut self, s: &Solid) -> Result<[model::Vec3; 2], Refusal> {
         let b = body(s)?;
         self.with(|k| {
             let bb = k.bounding_box(b).map_err(refusal)?;
@@ -1156,7 +1225,7 @@ impl Kernel for Cadrs {
     }
 
     fn split(
-        &self,
+        &mut self,
         s: &Solid,
         origin: model::Vec3,
         normal: model::Vec3,
@@ -1203,7 +1272,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn mesh(&self, s: &Solid, tolerance: f64) -> Result<brep_protocol::Mesh, Refusal> {
+    fn mesh(&mut self, s: &Solid, tolerance: f64) -> Result<brep_protocol::Mesh, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(brep_protocol::Mesh::default());
         };
@@ -1225,7 +1294,7 @@ impl Kernel for Cadrs {
         })
     }
 
-    fn display(&self, s: &Solid, tolerance: f64) -> Result<brep_protocol::Display, Refusal> {
+    fn display(&mut self, s: &Solid, tolerance: f64) -> Result<brep_protocol::Display, Refusal> {
         let Solid::Body(b) = *s else {
             return Ok(brep_protocol::Display::default());
         };
@@ -1280,7 +1349,7 @@ impl Kernel for Cadrs {
     }
 
     fn project(
-        &self,
+        &mut self,
         s: &Solid,
         direction: model::Vec3,
         tolerance: f64,
@@ -1304,5 +1373,21 @@ impl Kernel for Cadrs {
             }
             Ok(out)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_listed_function_is_one_of_the_protocols_once() {
+        for f in SUPPORTS {
+            assert!(brep_protocol::FUNCTIONS.contains(&f), "{f}");
+        }
+        let mut sorted = SUPPORTS.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), SUPPORTS.len());
     }
 }
