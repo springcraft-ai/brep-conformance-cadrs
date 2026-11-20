@@ -1309,13 +1309,7 @@ impl Kernel for Cadrs {
                     },
                 )
                 .map_err(refusal)?;
-            let smooth: std::collections::HashSet<EdgeId> = k
-                .edges(b)
-                .map_err(refusal)?
-                .into_iter()
-                .filter(|e| e.smooth || (e.faces[0].is_some() && e.faces[0] == e.faces[1]))
-                .map(|e| e.id)
-                .collect();
+            let info = k.edges(b).map_err(refusal)?;
             // Each face its own vertices, in the order its triangles first use them.
             let mut faces: Vec<(FaceId, brep_protocol::DisplayFace, Vec<Option<u32>>)> = Vec::new();
             for (t, &f) in m.indices.iter().zip(&m.triangle_faces) {
@@ -1337,13 +1331,28 @@ impl Kernel for Cadrs {
                 });
                 face.triangles.push(tri);
             }
+            // Each edge names its faces by their place in `faces`. An edge whose one face meets
+            // itself is a seam. cadrs measures no turn between an edge's faces, and does not say
+            // where an edge only splits one surface, so neither is given.
+            let place = |f: FaceId| faces.iter().position(|(id, ..)| *id == f).map(|i| i as u32);
+            let (mut edges, mut seams) = (Vec::new(), Vec::new());
+            for (id, line) in &m.edges {
+                let points: Vec<model::Vec3> = line.iter().map(|&p| arr(p)).collect();
+                let sides = info
+                    .iter()
+                    .find(|e| e.id == *id)
+                    .map_or([None; 2], |e| e.faces);
+                if sides[0].is_some() && sides[0] == sides[1] {
+                    seams.push(points);
+                    continue;
+                }
+                let named = sides.iter().flatten().filter_map(|&f| place(f)).collect();
+                edges.push(brep_protocol::DisplayEdge::new(points, named, None, false));
+            }
             Ok(brep_protocol::Display::new(
                 faces.into_iter().map(|(_, f, _)| f).collect(),
-                m.edges
-                    .iter()
-                    .filter(|(id, _)| !smooth.contains(id))
-                    .map(|(_, line)| line.iter().map(|&p| arr(p)).collect())
-                    .collect(),
+                edges,
+                seams,
             ))
         })
     }
