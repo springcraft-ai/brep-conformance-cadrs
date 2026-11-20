@@ -2,7 +2,8 @@
 name: Suite
 
 # A pull request or a push builds the adapter and runs a few tests from each area of the suite, at
-# the suite commit the locked brep-protocol release was published from. Each week, and on demand,
+# the suite commit the locked brep-protocol comes from: the commit a crates.io release was published
+# from, or the commit a git dependency names. Each week, and on demand,
 # it runs the whole suite at the suite's main branch, which shows when to take a newer release. Times on these shared machines are not
 # comparable; this checks that the adapter drives its kernel, and the results are only that.
 on:
@@ -32,11 +33,22 @@ jobs:
           case "$GITHUB_EVENT_NAME" in
               schedule | workflow_dispatch) ref=main ;;
               *)
-                  manifest="$(cargo metadata --locked --format-version 1 \
-                      --manifest-path adapter/Cargo.toml | jq -r '.packages[]
-                      | select(.name == "brep-protocol" and (.source // "" | startswith("registry+")))
-                      | .manifest_path')"
-                  ref="$(jq -r .git.sha1 "$(dirname "$manifest")/.cargo_vcs_info.json")"
+                  protocol="$(cargo metadata --locked --format-version 1 \
+                      --manifest-path adapter/Cargo.toml | jq -c '[.packages[]
+                      | select(.name == "brep-protocol")] | first')"
+                  source="$(jq -r '.source // ""' <<< "$protocol")"
+                  case "$source" in
+                      registry+*)
+                          manifest="$(jq -r .manifest_path <<< "$protocol")"
+                          ref="$(jq -r .git.sha1 "$(dirname "$manifest")/.cargo_vcs_info.json")"
+                          ;;
+                      # git+<url>?rev=<rev>#<full commit>
+                      git+*) ref="${source##*#}" ;;
+                      *)
+                          echo "brep-protocol comes from neither crates.io nor git: '$source'" >&2
+                          exit 1
+                          ;;
+                  esac
                   ;;
           esac
           git clone -q https://github.com/springcraft-ai/brep-conformance.git suite

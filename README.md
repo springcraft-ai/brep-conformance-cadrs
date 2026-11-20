@@ -22,19 +22,20 @@ its own maintainers, at [rvdende/cadrs](https://github.com/rvdende/cadrs).
 The adapter answers the requests of the suite's
 [api.md](https://github.com/springcraft-ai/brep-conformance/blob/main/doc/api.md#calling-a-kernel)
 on stdin and stdout, through `serve` in the `brep-protocol` crate. [`src/cadrs.rs`](src/cadrs.rs)
-answers each function with one call of a `cadrs_kernel` session (`NativeKernel`), as
+answers each function with one call of a `cadrs_kernel` session (`DefaultKernel`), as
 [the contract](https://github.com/springcraft-ai/brep-conformance/blob/main/doc/contract.md#what-an-adapter-may-do)
-asks, and `unsupported` lists the functions cadrs has no one call for, each with its reason.
+asks, and `supports` lists the functions it answers: since cadrs 0.2.9, all of them.
 
 What the adapter adds is translation:
 
-- [`src/sketch.rs`](src/sketch.rs) gives the suite's profiles, frames and paths as cadrs's.
-- A box is built square to the world's axes, then moved onto its frame.
-- A point becomes the edge or face it lies on through the kernel's `Pick::edge_at` and
-  `Pick::face_at`, checked by `min_distance` at `10·ε`.
+- The suite's profiles, frames and paths become cadrs's sketches, planes and curves.
+- A point becomes the edge or face it lies on through the kernel's distance query, within `10·ε`.
 - cadrs's `EmptyResult` from a boolean is the empty solid.
 - A STEP file with several solids is gathered into one body by `compound`.
 - A split's pieces are sorted by side.
+- Where the protocol's convention is one of several cadrs offers, the adapter names it: a torus
+  whose tube crosses its axis is refused (`Spindle::Refuse`), and distances are to solids, insides
+  included (`DistanceTarget::Solid`).
 
 cadrs_kernel is not on crates.io. [`Cargo.toml`](Cargo.toml) takes it from git at a fixed `rev`.
 

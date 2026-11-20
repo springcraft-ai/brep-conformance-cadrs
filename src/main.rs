@@ -2,12 +2,11 @@
 //! conformance suite, or any other client, can drive cadrs's kernel.
 
 mod cadrs;
-mod sketch;
 
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match brep_protocol::serve(&cadrs::Cadrs::new()) {
+    match brep_protocol::serve(&cadrs::Cadrs) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e}");
