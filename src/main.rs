@@ -6,7 +6,7 @@ mod cadrs;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    match brep_protocol::serve(&cadrs::Cadrs) {
+    match brep_protocol::serve(&mut cadrs::Cadrs::default()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e}");
