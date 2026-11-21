@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 brep-protocol = "2.0.1"
-# cadrs_kernel is not on crates.io. Keep `VERSION` in src/cadrs.rs equal to this rev.
+# cadrs_kernel is not on crates.io: this rev is the commit of the release that `VERSION` in
+# src/cadrs.rs names (`v0.2.9`); change both together.
 cadrs_kernel = { git = "https://github.com/rvdende/cadrs", rev = "bb09c367" }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
