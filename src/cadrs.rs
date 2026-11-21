@@ -15,8 +15,7 @@ use cadrs_kernel::{
 };
 use nalgebra::{Matrix3, Point2, Point3, Unit, Vector3};
 
-/// The cadrs release the adapter builds: its tag's commit is the `cadrs_kernel` rev in Cargo.toml,
-/// and the two change together.
+/// https://github.com/rvdende/cadrs/releases/tag/v0.2.9, the `cadrs_kernel` rev in Cargo.toml.
 const VERSION: &str = "0.2.9";
 
 /// The contract's linear tolerance ε, mm: a point names the edge or face within `10·ε` of it.
