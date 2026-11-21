@@ -7,7 +7,7 @@ description = "The cadrs adapter for the B-rep protocol the conformance suite dr
 publish = false
 
 [dependencies]
-brep-protocol = "2"
+brep-protocol = "2.0.1"
 # cadrs_kernel is not on crates.io. Keep `VERSION` in src/cadrs.rs equal to this rev.
 cadrs_kernel = { git = "https://github.com/rvdende/cadrs", rev = "bb09c367" }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
