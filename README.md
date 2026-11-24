@@ -58,8 +58,11 @@ target/release/brep-conformance --adapter ../brep-conformance-cadrs/target/relea
 
 ## Licences
 
-The adapter is under the MIT licence: see [LICENSE](LICENSE). cadrs is under the MIT or the
-Apache-2.0 licence: see cadrs's own repository.
+The adapter in this repository is under either the MIT licence
+([LICENSE-MIT](LICENSE-MIT)) or the Apache License, Version 2.0
+([LICENSE-APACHE](LICENSE-APACHE)), at your option.
+
+cadrs is under the MIT or the Apache-2.0 licence: see cadrs's own repository.
 
 ## Contributing
 
