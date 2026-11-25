@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 name: Suite
 
-# A pull request or a push builds the adapter and runs a few tests from each area of the suite, at
-# the suite commit the locked brep-protocol comes from: the commit a crates.io release was published
-# from, or the commit a git dependency names. Each week, and on demand,
-# it runs the whole suite at the suite's main branch, which shows when to take a newer release. Times on these shared machines are not
-# comparable; this checks that the adapter drives its kernel, and the results are only that.
+# A pull request or a push builds the adapter and runs a few tests from each area of the suite; a
+# manual run runs the whole suite. Every run uses the suite commit the locked brep-protocol comes
+# from: the commit a crates.io release was published from, or the commit a git dependency names. The
+# result changes only with the adapter, its kernel or that release, so nothing runs on a schedule.
+# Times on these shared machines are not comparable; this checks that the adapter drives its kernel,
+# and the results are only that.
 on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: '17 6 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -30,25 +29,20 @@ jobs:
           path: adapter
       - name: Check out the suite
         run: |
-          case "$GITHUB_EVENT_NAME" in
-              schedule | workflow_dispatch) ref=main ;;
+          protocol="$(cargo metadata --locked --format-version 1 \
+              --manifest-path adapter/Cargo.toml | jq -c '[.packages[]
+              | select(.name == "brep-protocol")] | first')"
+          source="$(jq -r '.source // ""' <<< "$protocol")"
+          case "$source" in
+              registry+*)
+                  manifest="$(jq -r .manifest_path <<< "$protocol")"
+                  ref="$(jq -r .git.sha1 "$(dirname "$manifest")/.cargo_vcs_info.json")"
+                  ;;
+              # git+<url>?rev=<rev>#<full commit>
+              git+*) ref="${source##*#}" ;;
               *)
-                  protocol="$(cargo metadata --locked --format-version 1 \
-                      --manifest-path adapter/Cargo.toml | jq -c '[.packages[]
-                      | select(.name == "brep-protocol")] | first')"
-                  source="$(jq -r '.source // ""' <<< "$protocol")"
-                  case "$source" in
-                      registry+*)
-                          manifest="$(jq -r .manifest_path <<< "$protocol")"
-                          ref="$(jq -r .git.sha1 "$(dirname "$manifest")/.cargo_vcs_info.json")"
-                          ;;
-                      # git+<url>?rev=<rev>#<full commit>
-                      git+*) ref="${source##*#}" ;;
-                      *)
-                          echo "brep-protocol comes from neither crates.io nor git: '$source'" >&2
-                          exit 1
-                          ;;
-                  esac
+                  echo "brep-protocol comes from neither crates.io nor git: '$source'" >&2
+                  exit 1
                   ;;
           esac
           git clone -q https://github.com/springcraft-ai/brep-conformance.git suite
@@ -67,7 +61,7 @@ jobs:
       - name: Run the suite
         run: |
           case "$GITHUB_EVENT_NAME" in
-              schedule | workflow_dispatch) tests=() ;;
+              workflow_dispatch) tests=() ;;
               *) tests=(--family "$SMOKE") ;;
           esac
           suite/target/release/brep-conformance --adapter "$ADAPTER" --threads 4 \
