@@ -15,8 +15,8 @@ use cadrs_kernel::{
 };
 use nalgebra::{Matrix3, Point2, Point3, Unit, Vector3};
 
-/// https://github.com/rvdende/cadrs/releases/tag/v0.2.9, the `cadrs_kernel` rev in Cargo.toml.
-const VERSION: &str = "0.2.9";
+/// https://github.com/rvdende/cadrs/releases/tag/v0.2.10, the `cadrs_kernel` rev in Cargo.toml.
+const VERSION: &str = "0.2.10";
 
 /// The contract's linear tolerance ε, mm: a point names the edge or face within `10·ε` of it.
 const EPS: f64 = 1e-7;
