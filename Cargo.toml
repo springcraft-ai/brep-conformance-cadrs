@@ -8,6 +8,6 @@ publish = false
 
 [dependencies]
 brep-protocol = "2.0.1"
-# https://github.com/rvdende/cadrs/releases/tag/v0.2.9, with `VERSION` in src/cadrs.rs.
-cadrs_kernel = { git = "https://github.com/rvdende/cadrs", rev = "bb09c367" }
+# https://github.com/rvdende/cadrs/releases/tag/v0.2.10, with `VERSION` in src/cadrs.rs.
+cadrs_kernel = { git = "https://github.com/rvdende/cadrs", rev = "066602cb" }
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
